@@ -1,4 +1,7 @@
 [
+    "./src/pathfinding/DelaunayNavmesh.js",
+    "./src/pathfinding/pathSmoothing.js",
+    "./src/pathfinding/Pathfinder.js",
     "./src/image-filters.js",
     "./src/binary-search-tree.js",
     "./src/bbox.js",

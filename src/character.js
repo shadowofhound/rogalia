@@ -1,4 +1,4 @@
-/* global util, CELL_SIZE, game, Point, Info, dom, T, Panel, Talks, BBox, loader, config, Avatar, Effect, TS, TT, Customization, ImageFilter, FONT_SIZE, astar, ContainerSlot, Quest, Sprite */
+/* global util, CELL_SIZE, game, Point, Info, dom, T, Panel, Talks, BBox, loader, config, Avatar, Effect, TS, TT, Customization, ImageFilter, FONT_SIZE, astar, Pathfinder,  ContainerSlot, Quest, Sprite */
 
 "use strict";
 function Character(id) {
@@ -27,6 +27,7 @@ function Character(id) {
 
     this.velocity = new Point();
 
+    this.path = [];
     this.dst = {
         x: 0,
         y: 0,
@@ -112,7 +113,8 @@ Character.prototype = {
             return;
         }
 
-        if ((Math.abs(this.x - this._remote.x) < CELL_SIZE) || (Math.abs(this.y - this._remote-y) < CELL_SIZE)) {
+        if (!this.path.length &&
+            (Math.abs(this.x - this._remote.x) < CELL_SIZE) || (Math.abs(this.y - this._remote-y) < CELL_SIZE)) {
             this.setPos(this._remote.x, this._remote.y);
             this.stop();
         } else {
@@ -585,6 +587,7 @@ Character.prototype = {
         var len_y = character.Y - this.Y;
         return util.distanceLessThan(len_x, len_y, Math.hypot(game.screen.width, game.screen.height));
     },
+
     setDst: function(x, y) {
         if (this.Speed.Current <= 0 || this.Disabled)
             return;
@@ -609,17 +612,92 @@ Character.prototype = {
         if (x == this.dst.x && y == this.dst.y)
             return;
 
-        game.network.send("set-dst", {x, y});
-        game.controller.resetAction();
-        this.dst.radius = 9;
-        this.dst.time = Date.now();
-        this.updateDst(x, y);
+        if (true /*&& config.character.pathfinding*/) {
+            const map = game.map
+            const tileSizeX = map.cells_x/2, tileSizeY = map.cells_y/2
+            const entities = game.entities.array.filter(e => e.CanCollide)
+
+            let tiles = [] //[x][y], true if blocked
+            map.data.forEach((tile, i) => {
+                const biome = map.bioms[tile.id]
+                if(!biome.Blocked) return
+                const x = i % map.cells_x, y = (i / map.cells_x) << 0
+                if(!tiles[x]) tiles[x] = []
+                tiles[x][y] = true
+            })
+            const tileObstacles = []
+            const offsetX = map.location.x + tileSizeX/2, offsetY = map.location.y + tileSizeY/2, Width = tileSizeX-1, Height = tileSizeY-1
+            tiles = tiles.forEach((col, x) => col.forEach((cell, y) => {
+                const isObstacle = tiles[x][y] &&
+                    !((tiles[x+1] && tiles[x+1][y]) && (tiles[x-1] && tiles[x-1][y]) && tiles[x][y+1] && tiles[x][y-1]) //all sides blocked == useless
+                if(!isObstacle) return null
+                tileObstacles.push({
+                    x: offsetX + x*tileSizeX,
+                    y: offsetY + y*tileSizeY,
+                    Width, Height
+                })
+            }))
+
+            const obstacles = [...entities, ...tileObstacles]
+                .map(e => {
+                    const w = e.Width || e.Radius*2
+                    const h = e.Height || e.Radius*2
+                    return {x: e.x - w/2, y: e.y - h/2, w: w-1, h: h-1/*костыль для препятствий, стоящих вплотную*/}
+                })
+
+            try {
+                this.pathfinder = new Pathfinder(obstacles)
+                this.path = this.pathfinder.find({x: this.x, y: this.y}, {x, y}, this.Radius + 1/* продолжение костыля*/) || []
+                const [head, ...tail] = this.path.reverse()
+                this.path = tail.reverse()
+                if(this.nextPathNode())
+                    return //here we have an ok path and can follow it
+            } catch(ohnoes) {
+                console.error(ohnoes)
+            }
+        } else {
+            game.network.send("set-dst", {x, y});
+            game.controller.resetAction();
+            this.dst.radius = 9;
+            this.dst.time = Date.now();
+            this.updateDst(x, y);
+        }
     },
+
+    nextPathNode: function() {
+        // console.log('next path node', new Error())
+        if(this.path.length) {
+            const next = this.path.pop()
+            const {x, y} = next
+            game.network.send("set-dst", {x, y});
+            game.controller.resetAction();
+            this.dst.radius = 9;
+            this.dst.time = Date.now();
+            this.updateDst(x, y);
+            return next
+        }
+        return null
+    },
+
+    _setDst: function(x, y) {
+        var len_x = x - this.X;
+        var len_y = y - this.Y;
+        var len = Math.hypot(len_x, len_y);
+
+        this.Dst.X = x;
+        this.Dst.Y = y;
+
+        this.Dx = len_x / len;
+        this.Dy = len_y / len;
+        this._pathHistory = [];
+    },
+
     updateDst: function(x, y) {
         this.dst.x = x;
         this.dst.y = y;
         this.velocity.set(x, y).sub(this).normalize();
     },
+
     getDrawPoint: function() {
         var p = this.screen();
         var dy = 0;
@@ -1545,11 +1623,18 @@ Character.prototype = {
             game.controller.lastAction.set(null);
         }
     },
+
     stop: function() {
+        if(this.nextPathNode())
+            return
+        this.Dx = 0;
+        this.Dy = 0;
+        this._pathHistory = [];
         this.Dst.X = this.dst.x = this.X;
         this.Dst.Y = this.dst.y = this.Y;
         this.velocity.set(0, 0);
     },
+
     isNear: function(entity) {
         const target = this.mount || this;
         const padding = target.Radius * 2 + target.correction;

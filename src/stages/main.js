@@ -108,9 +108,9 @@ function mainStage(data) {
 
         _.forEach(game.missiles, draw);
 
-        if (config.graphics.drawPath) {
+        // if (config.graphics.drawPath) {
             this.drawPath();
-        }
+        // }
 
         snow.draw();
 
@@ -135,6 +135,27 @@ function mainStage(data) {
             game.player.path.forEach(function(point) {
                 game.iso.fillCircle(point.x, point.y, 2);
             });
+        }
+
+        const p = game.player;
+        if(p.pathfinder) {
+            game.ctx.strokeStyle = 'red'
+            game.ctx.beginPath()
+            p.pathfinder.discretization.draw(game.ctx)
+            game.ctx.stroke()
+        }
+
+        if(p.path && p.path.length) {
+            const path = [...p.path, {x: p.dst.x, y: p.dst.y}].reverse()
+            game.ctx.strokeStyle = 'purple'
+            game.ctx.beginPath();
+            const start = new Point(p.x, p.y).toScreen()
+            game.ctx.moveTo(start.x, start.y);
+            path.forEach(n => {
+                n = new Point(n).toScreen()
+                game.ctx.lineTo(n.x, n.y);
+            })
+            game.ctx.stroke();
         }
     };
 
