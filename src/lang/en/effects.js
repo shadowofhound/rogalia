@@ -97,7 +97,7 @@ Effects.descriptions = {
     },
     "Drunk": {
         "class": "good",
-        "effect": "Heals a few health points. +13% hp -7% dmg.",
+        "effect": "+13% hp; -7% dmg.",
         "desc": "Gained when having an alcohol, sometimes makes you talk things you think.",
         "note": "If you drink too much, even an activated carbon won't save you from heavy hangover.",
     },
