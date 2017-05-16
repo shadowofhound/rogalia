@@ -141,7 +141,7 @@ Effects.descriptions = {
 
     },
     "Inspiration": {
-        "class": "fight",
+        "class": "пиздаfight",
         "effect": "Increases crit chance; with [де] increases damage absorption.",
         "desc": "AoE buff"
     },
